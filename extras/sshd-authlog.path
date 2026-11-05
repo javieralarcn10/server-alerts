@@ -1,0 +1,10 @@
+# Fallback si no existe /etc/pam.d/sshd. install.sh lo activa solo cuando hace falta.
+[Unit]
+Description=server-alerts: vigila auth.log por logins SSH
+
+[Path]
+PathModified=/var/log/auth.log
+Unit=server-alerts-authlog.service
+
+[Install]
+WantedBy=multi-user.target

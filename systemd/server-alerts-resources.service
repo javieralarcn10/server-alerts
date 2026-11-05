@@ -1,0 +1,11 @@
+[Unit]
+Description=server-alerts: comprobación de disco/RAM/CPU
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/server-alerts/bin/resource-check.sh
+TimeoutStartSec=60
+Nice=10
+IOSchedulingClass=idle

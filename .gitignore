@@ -1,0 +1,8 @@
+# Contiene tu token de Telegram: NUNCA lo subas
+config.env
+
+# macOS
+.DS_Store
+._*
+
+*.zip

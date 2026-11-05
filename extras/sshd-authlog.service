@@ -1,0 +1,9 @@
+# Fallback si no existe /etc/pam.d/sshd. install.sh lo activa solo cuando hace falta.
+[Unit]
+Description=server-alerts: parsea la última línea Accepted de auth.log
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/server-alerts/bin/authlog-notify.sh
+TimeoutStartSec=30
