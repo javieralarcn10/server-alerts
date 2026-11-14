@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Comprueba disco / RAM / CPU y avisa por Telegram si cruzan el umbral.
+# RAM y CPU solo avisan si el consumo se mantiene SUSTAIN_MINUTES seguidos
+# (se mide cada minuto; una sola muestra por debajo reinicia la cuenta).
 # Cooldown por métrica para no spamear y aviso cuando vuelve a la normalidad.
-# Umbrales y cooldown: /opt/server-alerts/config.env
+# Umbrales, duración y cooldown: /opt/server-alerts/config.env
 
 set -u
 SA_TAG="resource-check"
@@ -19,14 +21,32 @@ _cooldown_ok() {
   (( now - last >= COOLDOWN_MINUTES * 60 ))
 }
 
-# _evaluate clave etiqueta valor umbral detalle
+# _evaluate clave etiqueta valor umbral detalle [minutos_sostenido]
 _evaluate() {
-  local key="$1" label="$2" value="$3" limit="$4" detail="$5"
+  local key="$1" label="$2" value="$3" limit="$4" detail="$5" sustain="${6:-0}"
   local active_file="${STATE_DIR}/active_${key}"
+  local since_file="${STATE_DIR}/since_${key}"
+  local now since elapsed=0 msg_extra=""
 
   if (( value >= limit )); then
+    # ¿Desde cuándo está por encima? (se borra en cuanto baja del umbral)
+    now="$(date +%s)"
+    [[ -f "$since_file" ]] || echo "$now" >"$since_file" 2>/dev/null || true
+    since="$(cat "$since_file" 2>/dev/null)"
+    case "$since" in ''|*[!0-9]*) since="$now" ;; esac
+    elapsed=$(( now - since ))
+
+    if (( sustain > 0 )); then
+      # Margen de 30 s porque el timer no cae exacto al segundo.
+      if (( elapsed + 30 < sustain * 60 )); then
+        sa_log "${label} ${value}% por encima del ${limit}% hace $(( elapsed / 60 )) min (avisa a los ${sustain})"
+        return 0
+      fi
+      msg_extra=" durante $(( (elapsed + 30) / 60 )) min"
+    fi
+
     if _cooldown_ok "$key"; then
-      sa_send "⚠️ ${SERVER_NAME}: ${label} al ${value}%${detail:+ ${detail}}"
+      sa_send "⚠️ ${SERVER_NAME}: ${label} al ${value}%${msg_extra}${detail:+ ${detail}}"
       date +%s >"${STATE_DIR}/cooldown_${key}" 2>/dev/null || true
       touch "$active_file" 2>/dev/null || true
       sa_log "ALERTA ${label} ${value}% ${detail}"
@@ -34,6 +54,7 @@ _evaluate() {
       sa_log "${label} ${value}% (cooldown activo)"
     fi
   else
+    rm -f "$since_file" 2>/dev/null
     if [[ -f "$active_file" ]]; then
       sa_send "✅ ${SERVER_NAME}: ${label} de nuevo normal (${value}%)"
       rm -f "$active_file"
@@ -55,13 +76,23 @@ _evaluate disk "Disco" "${DISK_PCT:-0}" "$THRESHOLD_DISK" "en ${DISK_MP:-/}"
 # --- RAM: (MemTotal - MemAvailable) / MemTotal ---
 RAM_PCT="$(awk '/^MemTotal:/ {t = $2} /^MemAvailable:/ {a = $2}
                END { if (t > 0) printf "%d", (t - a) * 100 / t; else print 0 }' /proc/meminfo)"
-_evaluate ram "RAM" "${RAM_PCT:-0}" "$THRESHOLD_RAM" ""
+_evaluate ram "RAM" "${RAM_PCT:-0}" "$THRESHOLD_RAM" "" "$SUSTAIN_MINUTES"
 
-# --- CPU: loadavg de 5 min / núcleos (el de 1 min da falsas alarmas por picos) ---
-LOAD5="$(awk '{print $2}' /proc/loadavg)"
-CORES="$(nproc 2>/dev/null || echo 1)"
-case "$CORES" in ''|*[!0-9]*|0) CORES=1 ;; esac
-CPU_PCT="$(awk -v l="$LOAD5" -v n="$CORES" 'BEGIN { printf "%d", l * 100 / n }')"
-_evaluate cpu "CPU" "${CPU_PCT:-0}" "$THRESHOLD_CPU" "(load5 ${LOAD5} / ${CORES} cores)"
+# --- CPU: % real de uso desde la ejecución anterior (~1 min), vía /proc/stat ---
+# user+nice+system+irq+softirq+steal sobre el total (sin idle ni iowait).
+CPU_NOW="$(awk '/^cpu / { busy = $2 + $3 + $4 + $7 + $8 + $9; total = busy + $5 + $6; print busy, total; exit }' /proc/stat)"
+CPU_PREV_FILE="${STATE_DIR}/cpu_prev"
+CPU_PREV="$(cat "$CPU_PREV_FILE" 2>/dev/null)"
+echo "$CPU_NOW" >"$CPU_PREV_FILE" 2>/dev/null || true
+CPU_PCT="$(awk -v now="$CPU_NOW" -v prev="$CPU_PREV" 'BEGIN {
+  split(now, n, " "); split(prev, p, " ")
+  dt = n[2] - p[2]
+  if (prev == "" || dt <= 0) { print "-"; exit }
+  printf "%d", (n[1] - p[1]) * 100 / dt }')"
+if [[ "$CPU_PCT" == "-" ]]; then
+  sa_log "CPU: primera muestra, se evalúa en la siguiente ejecución"
+else
+  _evaluate cpu "CPU" "$CPU_PCT" "$THRESHOLD_CPU" "" "$SUSTAIN_MINUTES"
+fi
 
 exit 0

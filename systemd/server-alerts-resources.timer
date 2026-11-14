@@ -1,10 +1,10 @@
 [Unit]
-Description=server-alerts: temporizador de recursos (cada 5 min)
+Description=server-alerts: temporizador de recursos (cada minuto)
 
 [Timer]
 OnBootSec=2min
-OnUnitActiveSec=5min
-AccuracySec=30s
+OnUnitActiveSec=1min
+AccuracySec=5s
 Unit=server-alerts-resources.service
 
 [Install]

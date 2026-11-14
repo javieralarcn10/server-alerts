@@ -3,7 +3,7 @@
 Alertas por Telegram para tus servidores Linux (Debian/Ubuntu):
 
 - 🔐 **Login SSH**: usuario, IP, ubicación aproximada y hora.
-- ⚠️ **Disco / RAM / CPU ≥ 80%**: se comprueba cada 5 min. Avisa como mucho una vez por hora por métrica y te dice cuándo vuelve a la normalidad.
+- ⚠️ **Disco / RAM / CPU ≥ 80%**: se comprueba cada minuto. RAM y CPU solo avisan si el consumo se mantiene 5 min seguidos (los picos se ignoran). Avisa como mucho una vez por hora por métrica y te dice cuándo vuelve a la normalidad.
 
 Solo Bash + `curl` + `python3` (el instalador los pone). Sin agentes, sin dependencias externas, sin cuentas en terceros.
 
@@ -97,7 +97,7 @@ sudo tail -f /var/log/server-alerts.log                   # ver log
 sudo nano /opt/server-alerts/config.env
 ```
 
-Ahí están el nombre, los umbrales (`THRESHOLD_DISK`, `THRESHOLD_RAM`, `THRESHOLD_CPU`), el cooldown y `IGNORE_IPS` / `IGNORE_USERS` (por ejemplo, para no recibir avisos de las conexiones automáticas de tu panel o de tu CI). Los cambios se aplican en la siguiente alerta.
+Ahí están el nombre, los umbrales (`THRESHOLD_DISK`, `THRESHOLD_RAM`, `THRESHOLD_CPU`), los minutos sostenidos para RAM/CPU (`SUSTAIN_MINUTES`), el cooldown y `IGNORE_IPS` / `IGNORE_USERS` (por ejemplo, para no recibir avisos de las conexiones automáticas de tu panel o de tu CI). Los cambios se aplican en la siguiente alerta.
 
 ```bash
 THRESHOLD_DISK=90
@@ -122,8 +122,8 @@ sudo /opt/server-alerts/uninstall.sh --purge   # borra también el log
 |-----|------|
 | Login SSH | `pam_exec` en `/etc/pam.d/sshd` (con backup). Es `optional` y se ejecuta en segundo plano: nunca bloquea ni retrasa el login. Si no existe PAM, usa `/var/log/auth.log`. |
 | Disco | Peor `%` de `df -P` (sin tmpfs, overlay, squashfs…) |
-| RAM | `(MemTotal - MemAvailable) / MemTotal` |
-| CPU | loadavg de 5 min / núcleos |
+| RAM | `(MemTotal - MemAvailable) / MemTotal`, sostenido `SUSTAIN_MINUTES` |
+| CPU | % de uso real de `/proc/stat` entre muestras (1 min), sostenido `SUSTAIN_MINUTES` |
 | Geo | `ipapi.co` (HTTPS, sin clave, 3 s de timeout). IPs privadas no se consultan. |
 | Persistencia | Timer systemd `enabled`: sigue funcionando tras reiniciar. |
 

@@ -66,6 +66,7 @@ ALERT_TZ="Europe/Madrid"
 THRESHOLD_DISK=80
 THRESHOLD_RAM=80
 THRESHOLD_CPU=80
+SUSTAIN_MINUTES=5
 COOLDOWN_MINUTES=60
 IGNORE_IPS=""
 IGNORE_USERS=""
@@ -124,6 +125,8 @@ ALERT_TZ=$(printf '%q' "$ALERT_TZ")
 THRESHOLD_DISK=$(printf '%q' "$THRESHOLD_DISK")
 THRESHOLD_RAM=$(printf '%q' "$THRESHOLD_RAM")
 THRESHOLD_CPU=$(printf '%q' "$THRESHOLD_CPU")
+# RAM y CPU solo avisan si siguen por encima del umbral estos minutos seguidos
+SUSTAIN_MINUTES=$(printf '%q' "$SUSTAIN_MINUTES")
 COOLDOWN_MINUTES=$(printf '%q' "$COOLDOWN_MINUTES")
 
 # Opcional: IPs o usuarios (separados por espacios) que NO generan aviso SSH
@@ -168,11 +171,13 @@ else
   info "AVISO: ni $PAM_FILE ni /var/log/auth.log: no habrá avisos de login SSH"
 fi
 
-# --- 5. Timer de recursos (cada 5 min, sobrevive a reinicios) --------------
+# --- 5. Timer de recursos (cada minuto, sobrevive a reinicios) ------------
 install -m 0644 "$SRC/systemd/server-alerts-resources.service" "$UNIT_DIR/"
 install -m 0644 "$SRC/systemd/server-alerts-resources.timer" "$UNIT_DIR/"
 systemctl daemon-reload
 systemctl enable --now server-alerts-resources.timer >/dev/null 2>&1
+# Si ya estaba activo (actualización), reinícialo para que use el intervalo nuevo.
+systemctl restart server-alerts-resources.timer >/dev/null 2>&1 || true
 [[ "${AUTHLOG_FALLBACK:-0}" -eq 1 ]] && systemctl enable --now server-alerts-authlog.path >/dev/null 2>&1
 info "Timer de recursos activo"
 
